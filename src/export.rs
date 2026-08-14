@@ -31,9 +31,16 @@ pub fn export_duperemove(db: &Db, output: &Path) -> Result<()> {
     )?;
 
     create_duperemove_schema(&conn)?;
-    write_config(&conn)?;
-    export_files(db, &conn)?;
+    let scan_epoch = db.get_scan_epoch().unwrap_or(0) as i64;
+    let block_size = db
+        .get_config_int("block_size")
+        .unwrap_or(None)
+        .unwrap_or(128 * 1024) as i64;
+    write_config(&conn, scan_epoch, block_size)?;
+    export_files(db, &conn, scan_epoch)?;
     export_blocks(db, &conn)?;
+    // Note: extents table is created but not populated — duperemove
+    // populates it from blocks during its own processing (Hickey F6).
 
     Ok(())
 }
@@ -91,7 +98,7 @@ fn create_duperemove_schema(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn write_config(conn: &Connection) -> Result<()> {
+fn write_config(conn: &Connection, scan_epoch: i64, block_size: i64) -> Result<()> {
     // Write config table (dbfile.c:718-767)
     conn.execute(
         "INSERT OR REPLACE INTO config (keyname, keyval) VALUES ('hash_type', ?1)",
@@ -99,11 +106,11 @@ fn write_config(conn: &Connection) -> Result<()> {
     )?;
     conn.execute(
         "INSERT OR REPLACE INTO config (keyname, keyval) VALUES ('block_size', ?1)",
-        params![128 * 1024i64], // default block size
+        params![block_size],
     )?;
     conn.execute(
         "INSERT OR REPLACE INTO config (keyname, keyval) VALUES ('dedupe_sequence', ?1)",
-        params![0i64],
+        params![scan_epoch],
     )?;
     conn.execute(
         "INSERT OR REPLACE INTO config (keyname, keyval) VALUES ('version_minor', ?1)",
@@ -113,7 +120,6 @@ fn write_config(conn: &Connection) -> Result<()> {
         "INSERT OR REPLACE INTO config (keyname, keyval) VALUES ('version_major', ?1)",
         params![DB_FILE_MAJOR],
     )?;
-    // fs_uuid — empty for now
     conn.execute(
         "INSERT OR REPLACE INTO config (keyname, keyval) VALUES ('fs_uuid', ?1)",
         params!["00000000-0000-0000-0000-000000000000".as_bytes()],
@@ -121,7 +127,7 @@ fn write_config(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn export_files(db: &Db, conn: &Connection) -> Result<()> {
+fn export_files(db: &Db, conn: &Connection, scan_epoch: i64) -> Result<()> {
     let files = db.iter_files()?;
     let tx = conn.unchecked_transaction()?;
 
@@ -136,7 +142,7 @@ fn export_files(db: &Db, conn: &Connection) -> Result<()> {
                 f.subvol as i64,
                 f.size as i64,
                 f.mtime,
-                0i64, // dedupe_seq
+                scan_epoch,
                 f.digest,
                 f.flags as i64,
             ],

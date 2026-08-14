@@ -79,41 +79,10 @@ pub fn tree_search_v2(
     args_ref.key.nr_items = u32::MAX;
     args_ref.buf_size = SEARCH_BUF_SIZE as u64;
 
-    // ioctl number: _IOWR(BTRFS_IOCTL_MAGIC, 17, struct btrfs_ioctl_search_args_v2)
-    // btrfs.h:1144: BTRFS_IOC_TREE_SEARCH_V2 _IOWR(0x94, 17, ...)
-    const IOC_TREE_SEARCH_V2: u64 = 0x40209411; // _IOWR(0x94, 17, ...)
-    // Actually let's compute it properly.
-    // _IOWR(type, nr, size) = (3 << 30) | (size << 16) | (type << 8) | nr
-    // type = 0x94, nr = 17, size = sizeof(BtrfsIoctlSearchArgsV2) is wrong
-    // The ioctl number uses the *old* struct size for compat. Let's use the
-    // value from the kernel header directly.
-    // From btrfs.h:1144: _IOWR(BTRFS_IOCTL_MAGIC, 17, struct btrfs_ioctl_search_args_v2)
-    // The _IOWR macro encodes the size of the pointed-to struct.
-    // On x86_64: _IOWR(0x94, 17, sizeof(struct btrfs_ioctl_search_args_v2))
-    // The struct size includes the flexible array member as 0 bytes in the header.
-    // So size = offsetof(buf) = sizeof(key) + sizeof(buf_size) = 120 + 8 = 128
-    // _IOWR = (3<<30) | (128<<16) | (0x94<<8) | 17
-    //       = 0xC0809411
-    // But btrfs.h actually defines both IOC_TREE_SEARCH and IOC_TREE_SEARCH_V2
-    // with the same ioctl number 17, and the kernel dispatches based on buf_size.
-    // The ioctl number for both is: _IOWR(0x94, 17, struct btrfs_ioctl_search_args)
-    // where the old struct has a 4096-byte buffer. So size = sizeof(old struct) = 4096+24 = 4120? No.
-    // Actually _IOWR encodes sizeof(struct btrfs_ioctl_search_args) which has
-    // key (120 bytes) + buf[4096-120] = buf[3976]. Total = 4096.
-    // _IOWR(0x94, 17, 4096) = (3<<30) | (4096<<16) | (0x94<<8) | 17
-    // = 0xC0009411 | (4096<<16) = 0xC0009411 | 0x04000000 = wait that's not right.
-    // Let me just use the raw ioctl number. On Linux x86_64:
-    // _IOWR(type,nr,size) = _IOC(_IOC_READ|_IOC_WRITE, type, nr, size)
-    // _IOC(dir, type, nr, size) = (dir<<_IOC_DIRSHIFT) | (type<<_IOC_TYPESHIFT) | (nr<<_IOC_NRSHIFT) | (size<<_IOC_SIZESHIFT)
-    // _IOC_NRSHIFT=0, _IOC_TYPESHIFT=8, _IOC_SIZESHIFT=16, _IOC_DIRSHIFT=30
-    // _IOC_READ=2, _IOC_WRITE=1, so _IOC_READ|_IOC_WRITE=3
-    // For the V1 struct (4096 bytes total): size=4096
-    // _IOWR(0x94, 17, 4096) = (3<<30) | (4096<<16) | (0x94<<8) | 17
-    // = 0xC0000000 | 0x04000000 | 0x00009400 | 0x00000011
-    // = 0xC4009411
-    const IOC_TREE_SEARCH: u64 = 0xC4009411u64;
+    // _IOWR(0x94, 17, struct btrfs_ioctl_search_args) — btrfs.h:1142-1144
+    const IOC_TREE_SEARCH_V2: u64 = 0xC4009411;
 
-    let ret = unsafe { libc_ioctl(fd, IOC_TREE_SEARCH as _, args_ptr as *mut _) };
+    let ret = unsafe { libc_ioctl(fd, IOC_TREE_SEARCH_V2 as _, args_ptr as *mut _) };
     if ret < 0 {
         let err = Errno::last();
         if err == Errno::EOVERFLOW {
@@ -190,13 +159,8 @@ pub fn fiemap(fd: RawFd) -> Result<Vec<FiemapExtent>> {
     fm.fm_length = u64::MAX;
     fm.fm_extent_count = 0;
 
-    // FS_IOC_FIEMAP = _IOWR('f', 11, struct fiemap)
-    // _IOWR('f', 11, sizeof(struct fiemap)) = (3<<30) | (sizeof<<16) | ('f'<<8) | 11
-    // sizeof(struct fiemap) = 8+8+4+4+4+4 = 32 bytes (without flexible array)
-    // _IOWR('f', 11, 32) = (3<<30) | (32<<16) | (0x66<<8) | 11
-    // = 0xC0000000 | 0x00200000 | 0x00006600 | 0x0000000B
-    // = 0xC020660B
-    const IOC_FIEMAP: u64 = 0xC020660Bu64;
+    // _IOWR('f', 11, struct fiemap) — fs.h:318
+    const IOC_FIEMAP: u64 = 0xC020660B;
 
     let ret = unsafe { libc_ioctl(fd, IOC_FIEMAP as _, &mut fm as *mut Fiemap as *mut _) };
     if ret < 0 {
@@ -302,12 +266,8 @@ pub fn fideduperange(
         }
     }
 
-    // FIDEDUPERANGE = _IOWR(0x94, 54, struct file_dedupe_range)
-    // sizeof(struct file_dedupe_range) = 8+8+2+2+4 = 24
-    // _IOWR(0x94, 54, 24) = (3<<30) | (24<<16) | (0x94<<8) | 54
-    // = 0xC0000000 | 0x00180000 | 0x00009400 | 0x00000036
-    // = 0xC0189436
-    const IOC_FIDEDUPERANGE: u64 = 0xC0189436u64;
+    // _IOWR(0x94, 54, struct file_dedupe_range) — fs.h:310
+    const IOC_FIDEDUPERANGE: u64 = 0xC0189436;
 
     let ret = unsafe { libc_ioctl(src_fd, IOC_FIDEDUPERANGE as _, buf as *mut _) };
     if ret < 0 {
@@ -351,12 +311,8 @@ pub fn fs_info(fd: RawFd) -> Result<(u16, u16, u32)> {
     let mut args: BtrfsIoctlFsInfoArgs = unsafe { std::mem::zeroed() };
     args.flags = 1; // BTRFS_FS_INFO_FLAG_CSUM_INFO
 
-    // BTRFS_IOC_FS_INFO = _IOR(0x94, 31, struct btrfs_ioctl_fs_info_args)
-    // sizeof = 1024 bytes (padded)
-    // _IOR(0x94, 31, 1024) = (2<<30) | (1024<<16) | (0x94<<8) | 31
-    // = 0x80000000 | 0x04000000 | 0x00009400 | 0x0000001F
-    // = 0x8400941F
-    const IOC_FS_INFO: u64 = 0x8400941Fu64;
+    // _IOR(0x94, 31, struct btrfs_ioctl_fs_info_args) — btrfs.h:1166
+    const IOC_FS_INFO: u64 = 0x8400941F;
 
     let ret = unsafe { libc_ioctl(fd, IOC_FS_INFO as _, &mut args as *mut _ as *mut _) };
     if ret < 0 {
@@ -384,12 +340,8 @@ pub fn lookup_subvol(fd: RawFd) -> Result<u64> {
     let mut args: BtrfsIoctlInoLookupArgs = unsafe { std::mem::zeroed() };
     args.objectid = BTRFS_FIRST_FREE_OBJECTID;
 
-    // BTRFS_IOC_INO_LOOKUP = _IOWR(0x94, 18, struct btrfs_ioctl_ino_lookup_args)
-    // sizeof = 8+8+4080 = 4096
-    // _IOWR(0x94, 18, 4096) = (3<<30) | (4096<<16) | (0x94<<8) | 18
-    // = 0xC0000000 | 0x04000000 | 0x00009400 | 0x00000012
-    // = 0xC4009412
-    const IOC_INO_LOOKUP: u64 = 0xC4009412u64;
+    // _IOWR(0x94, 18, struct btrfs_ioctl_ino_lookup_args) — btrfs.h:1146
+    const IOC_INO_LOOKUP: u64 = 0xC4009412;
 
     let ret = unsafe { libc_ioctl(fd, IOC_INO_LOOKUP as _, &mut args as *mut _ as *mut _) };
     if ret < 0 {

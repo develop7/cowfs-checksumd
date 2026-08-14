@@ -1,7 +1,5 @@
 pub mod csum_tree;
-pub mod fiemap;
 pub mod ioctl;
-pub mod search;
 
 /// Btrfs on-disk constants (from /usr/include/linux/btrfs_tree.h).
 /// Verified against kernel headers on disk.
@@ -37,15 +35,6 @@ pub mod constants {
         pub const SHA256: u16 = 2;
         pub const BLAKE2: u16 = 3;
     }
-
-    /// Btrfs ioctl magic (btrfs.h:31).
-    pub const BTRFS_IOCTL_MAGIC: u8 = 0x94;
-
-    /// FS_IOC_FIEMAP ioctl number (fs.h:318).
-    pub const FS_IOC_FIEMAP: u64 = 0xc020660b;
-
-    /// FIDEDUPERANGE ioctl number (fs.h:310).
-    pub const FIDEDUPERANGE: u64 = 0xc0189436;
 
     /// FIEMAP_EXTENT_SHARED flag (fiemap.h:Shared).
     pub const FIEMAP_EXTENT_SHARED: u32 = 0x00002000;
