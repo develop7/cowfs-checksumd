@@ -174,8 +174,6 @@ pub fn fiemap(fd: RawFd) -> Result<Vec<FiemapExtent>> {
     }
 
     // Second call: get actual extents
-    let layout = std::alloc::Layout::array::<FiemapExtent>(count).unwrap();
-    let extents_ptr = unsafe { std::alloc::alloc_zeroed(layout) as *mut FiemapExtent };
 
     // We need a buffer that holds Fiemap header + count * FiemapExtent
     let fiemap_size = size_of::<Fiemap>() + count * size_of::<FiemapExtent>();
@@ -203,7 +201,14 @@ pub fn fiemap(fd: RawFd) -> Result<Vec<FiemapExtent>> {
             mapped,
         )
     };
-
+    /// CSUM tree fast path: read per-sector checksums from btrfs CSUM tree.
+    ///
+    /// Note: the file-level digest produced here is a hash of btrfs checksum
+    /// bytes, NOT of file content. It is only comparable to other files scanned
+    /// via the same CSUM tree path on the same filesystem (same csum type).
+    /// Files scanned via the userspace fallback produce a different digest
+    /// format and won't match — this is acceptable because cross-filesystem
+    /// dedup is impossible anyway (FIDEDUPERANGE is same-filesystem-only).
     let result = extents_slice.to_vec();
 
     unsafe { std::alloc::dealloc(fiemap_buf, fiemap_layout) };

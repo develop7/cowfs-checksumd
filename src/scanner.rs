@@ -202,6 +202,13 @@ pub fn scan_file(path: &Path, db: &Db, config: &ScannerConfig, scan_epoch: u64) 
 }
 
 /// CSUM tree fast path: read per-sector checksums from btrfs CSUM tree.
+///
+/// Note: the file-level digest produced here is a hash of btrfs checksum
+/// bytes, NOT of file content. It is only comparable to other files scanned
+/// via the same CSUM tree path on the same filesystem (same csum type).
+/// Files scanned via the userspace fallback produce a different digest
+/// format and won't match — this is acceptable because cross-filesystem
+/// dedup is impossible anyway (FIDEDUPERANGE is same-filesystem-only).
 fn scan_csum_tree(
     fd: std::os::fd::RawFd,
     subvol: u64,
