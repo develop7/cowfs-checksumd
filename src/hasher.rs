@@ -30,6 +30,16 @@ pub fn compute_file_hash(block_hashes: &[Vec<u8>]) -> [u8; XXH3_DIGEST_LEN] {
     hasher.digest128().to_le_bytes()
 }
 
+/// Compute file-level hash from block digests by reference (Hickey F20:
+/// avoids Vec<Vec<u8>> allocation on the CSUM fast path).
+pub fn compute_file_hash_ref(digests: &[&[u8; XXH3_DIGEST_LEN]]) -> [u8; XXH3_DIGEST_LEN] {
+    let mut hasher = xxh3::Xxh3::new();
+    for h in digests {
+        hasher.update(&h[..]);
+    }
+    hasher.digest128().to_le_bytes()
+}
+
 /// Read a file and compute per-block XXH3-128 hashes.
 ///
 /// This is the userspace fallback for files where CSUM tree checksums

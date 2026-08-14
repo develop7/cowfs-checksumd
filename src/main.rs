@@ -82,26 +82,7 @@ fn main() -> Result<()> {
             let db = db::Db::open(&db_path)?;
             let scan_epoch = db.bump_scan_epoch()?;
 
-            // Detect btrfs and get csum info
-            let mut config = scanner::ScannerConfig {
-                block_size: block_size * 1024,
-                ..Default::default()
-            };
-
-            if let Ok(f) = std::fs::File::open(&dir) {
-                use std::os::fd::AsRawFd;
-                if let Ok((csum_type, csum_size, sectorsize)) = btrfs::ioctl::fs_info(f.as_raw_fd())
-                {
-                    config.csum_type = csum_type;
-                    config.csum_size = csum_size;
-                    config.sectorsize = sectorsize;
-                    tracing::info!(
-                        "btrfs detected: csum={}, sectorsize={}",
-                        btrfs::csum_type_name(csum_type),
-                        sectorsize
-                    );
-                }
-            }
+            let config = scanner::ScannerConfig::detect(&dir, block_size);
 
             db.set_config_int("block_size", (block_size * 1024) as i64)?;
             db.set_config_int("csum_type", config.csum_type as i64)?;

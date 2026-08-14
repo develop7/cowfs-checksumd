@@ -46,6 +46,12 @@ impl Db {
         Ok(Self { conn })
     }
 
+    /// Expose the connection for query modules (Lowy F6: detection query
+    /// lives in query.rs, not db.rs).
+    pub fn connection(&self) -> &Connection {
+        &self.conn
+    }
+
     fn create_schema(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             r#"
@@ -187,41 +193,6 @@ impl Db {
         Ok(epoch)
     }
 
-    /// Find duplicate files: groups by (digest, size) with count > 1.
-    pub fn find_duplicate_files(&self) -> Result<Vec<DuplicateGroup>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT digest, size, COUNT(*) as cnt
-             FROM files
-             WHERE digest IS NOT NULL AND flags & 1 = 0
-             GROUP BY digest, size
-             HAVING COUNT(*) > 1",
-        )?;
-        let mut groups = Vec::new();
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            let digest: Vec<u8> = row.get(0)?;
-            let size: i64 = row.get(1)?;
-            let count: i64 = row.get(2)?;
-
-            // Get filenames for this group
-            let mut file_stmt = self.conn.prepare(
-                "SELECT filename FROM files WHERE digest = ?1 AND size = ?2 AND flags & 1 = 0",
-            )?;
-            let mut file_rows = file_stmt.query(params![digest, size])?;
-            let mut files = Vec::new();
-            while let Some(frow) = file_rows.next()? {
-                files.push(frow.get::<_, String>(0)?);
-            }
-            groups.push(DuplicateGroup {
-                digest,
-                size: size as u64,
-                count: count as usize,
-                files,
-            });
-        }
-        Ok(groups)
-    }
-
     /// Get all files with their digests for export.
     pub fn iter_files(&self) -> Result<Vec<ExportFile>> {
         let mut stmt = self.conn.prepare(
@@ -261,15 +232,6 @@ impl Db {
         }
         Ok(blocks)
     }
-}
-
-/// A group of duplicate files.
-#[derive(Clone, Debug)]
-pub struct DuplicateGroup {
-    pub digest: Vec<u8>,
-    pub size: u64,
-    pub count: usize,
-    pub files: Vec<String>,
 }
 
 /// File record for export.

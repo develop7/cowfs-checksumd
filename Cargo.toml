@@ -9,7 +9,6 @@ license = "GPL-2.0-only"
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
-sha2 = "0.10"
 nix = { version = "0.29", features = ["fs", "ioctl", "user"] }
 anyhow = "1"
 thiserror = "2"
