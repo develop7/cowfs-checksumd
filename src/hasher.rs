@@ -81,3 +81,58 @@ fn read_full(file: &mut std::fs::File, buf: &mut [u8]) -> anyhow::Result<usize> 
     }
     Ok(total)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hash_block_deterministic() {
+        let data = b"hello world";
+        let h1 = hash_block_xxh3(data);
+        let h2 = hash_block_xxh3(data);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_hash_block_different_input() {
+        let h1 = hash_block_xxh3(b"hello world");
+        let h2 = hash_block_xxh3(b"hello worl!");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_file_hash_matches_for_identical_blocks() {
+        let blocks = vec![hash_block_xxh3(b"block1"), hash_block_xxh3(b"block2")];
+        let digests: Vec<&[u8; XXH3_DIGEST_LEN]> = blocks.iter().collect();
+        let h1 = compute_file_hash_ref(&digests);
+        let h2 = compute_file_hash_ref(&digests);
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_file_hash_differs_for_different_blocks() {
+        let blocks1 = vec![hash_block_xxh3(b"block1"), hash_block_xxh3(b"block2")];
+        let blocks2 = vec![hash_block_xxh3(b"block1"), hash_block_xxh3(b"block3")];
+        let d1: Vec<&[u8; XXH3_DIGEST_LEN]> = blocks1.iter().collect();
+        let d2: Vec<&[u8; XXH3_DIGEST_LEN]> = blocks2.iter().collect();
+        let h1 = compute_file_hash_ref(&d1);
+        let h2 = compute_file_hash_ref(&d2);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_hash_file_blocks_reads_correctly() {
+        use std::io::{Seek, Write};
+        let data = b"hello world, this is a test file content";
+        let mut tmp = tempfile::tempfile().unwrap();
+        tmp.write_all(data).unwrap();
+        tmp.seek(std::io::SeekFrom::Start(0)).unwrap();
+        let hashes = hash_file_blocks(&mut tmp, 16).unwrap();
+        // 43 bytes / 16 = 2 full blocks + 1 partial
+        assert_eq!(hashes.len(), 3);
+        assert_eq!(hashes[0].0, 0);
+        assert_eq!(hashes[1].0, 16);
+        assert_eq!(hashes[2].0, 32);
+    }
+}
