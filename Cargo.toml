@@ -1,6 +1,22 @@
 [package]
-name = "cowfs-checksumd"
+name = "cowfs-dupescan"
 version = "0.1.0"
 edition = "2024"
+description = "Btrfs duplicate scanner — reads CSUM tree checksums directly, detects duplicates, exports to duperemove format"
+license = "GPL-2.0-only"
 
 [dependencies]
+clap = { version = "4", features = ["derive"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+sha2 = "0.10"
+nix = { version = "0.29", features = ["fs", "ioctl", "user"] }
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+walkdir = "2"
+hex = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
