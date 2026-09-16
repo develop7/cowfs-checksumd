@@ -79,8 +79,10 @@ pub fn tree_search_v2(
     args_ref.key.nr_items = u32::MAX;
     args_ref.buf_size = SEARCH_BUF_SIZE as u64;
 
-    // _IOWR(0x94, 17, struct btrfs_ioctl_search_args) — btrfs.h:1142-1144
-    const IOC_TREE_SEARCH_V2: u64 = 0xC4009411;
+    // _IOWR(0x94, 17, struct btrfs_ioctl_search_args_v2) — btrfs.h:1144.
+    // Size field encodes sizeof(args_v2) = key + buf_size = 112 bytes;
+    // verified against kernel headers via BTRFS_IOC_TREE_SEARCH_V2.
+    const IOC_TREE_SEARCH_V2: u64 = 0xC0709411;
 
     let ret = unsafe { libc_ioctl(fd, IOC_TREE_SEARCH_V2 as _, args_ptr as *mut _) };
     if ret < 0 {
@@ -311,8 +313,9 @@ struct BtrfsIoctlFsInfoArgs {
 
 /// Get filesystem info including csum type and size.
 ///
+/// Returns (csum_type, csum_size, sectorsize, nodesize).
 /// Requires BTRFS_FS_INFO_FLAG_CSUM_INFO (btrfs.h:267).
-pub fn fs_info(fd: RawFd) -> Result<(u16, u16, u32)> {
+pub fn fs_info(fd: RawFd) -> Result<(u16, u16, u32, u32)> {
     let mut args: BtrfsIoctlFsInfoArgs = unsafe { std::mem::zeroed() };
     args.flags = 1; // BTRFS_FS_INFO_FLAG_CSUM_INFO
 
@@ -325,7 +328,12 @@ pub fn fs_info(fd: RawFd) -> Result<(u16, u16, u32)> {
         bail!("BTRFS_IOC_FS_INFO ioctl failed: {}", err);
     }
 
-    Ok((args.csum_type, args.csum_size, args.sectorsize))
+    Ok((
+        args.csum_type,
+        args.csum_size,
+        args.sectorsize,
+        args.nodesize,
+    ))
 }
 
 // ── INO_LOOKUP (get subvol ID) ──────────────────────────────────────────────
@@ -345,8 +353,10 @@ pub fn lookup_subvol(fd: RawFd) -> Result<u64> {
     let mut args: BtrfsIoctlInoLookupArgs = unsafe { std::mem::zeroed() };
     args.objectid = BTRFS_FIRST_FREE_OBJECTID;
 
-    // _IOWR(0x94, 18, struct btrfs_ioctl_ino_lookup_args) — btrfs.h:1146
-    const IOC_INO_LOOKUP: u64 = 0xC4009412;
+    // _IOW(0x94, 18, struct btrfs_ioctl_ino_lookup_args) — btrfs.h:1146.
+    // sizeof(args) = 4096 (treeid + objectid + name[4080]); verified via
+    // BTRFS_IOC_INO_LOOKUP. Was wrongly encoded as _IOWR, causing ENOTTY.
+    const IOC_INO_LOOKUP: u64 = 0xD0009412;
 
     let ret = unsafe { libc_ioctl(fd, IOC_INO_LOOKUP as _, &mut args as *mut _ as *mut _) };
     if ret < 0 {
