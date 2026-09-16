@@ -155,7 +155,7 @@ pub fn scan_file(path: &Path, db: &Db, config: &ScannerConfig, scan_epoch: u64) 
             file_digest,
         },
         Err(e) => {
-            debug!(
+            warn!(
                 "CSUM tree path failed ({}), using userspace hashing: {}",
                 e,
                 path.display()
