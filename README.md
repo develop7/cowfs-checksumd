@@ -93,6 +93,30 @@ src/
   means "dirty, not yet on disk" — skipping it drops real data. (duperemove
   `file_flags.h:5` skip set, verified from `fiemap.h:69`.)
 
+## Tests
+
+Run the ordinary test suite with `cargo test --locked`.
+
+The `btrfs_image` integration test creates a fresh 256 MiB sparse image,
+formats and loop-mounts it, writes two duplicate files and a same-size unique
+file, then runs the real `scan` and `list` commands. It checks the database
+digests and listed paths, rejects userspace-fallback-only results, and unmounts
+and removes the fixture. No images are cached or checked in.
+
+This test is ignored by default: it needs Linux, `btrfs-progs`, loop devices,
+and mount/`TREE_SEARCH_V2` privileges. Build unprivileged, then execute only
+the test binary as root (requires `jq`):
+
+```bash
+test_bin=$(cargo test --locked --test btrfs_image --no-run --message-format=json |
+  jq -r 'select(.executable != null and .target.name == "btrfs_image") | .executable')
+sudo "$test_bin" --ignored --nocapture
+```
+
+CI runs this explicitly; missing prerequisites fail rather than silently skip.
+If unmount fails, the fixture directory is retained and its path reported for
+manual cleanup. Killing the test with SIGKILL also requires manual cleanup.
+
 ## References
 
 - btrfs CSUM tree: `/usr/include/linux/btrfs_tree.h:58,188` (on-disk format)

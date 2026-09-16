@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install btrfs-progs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y btrfs-progs
+
+      - name: Verify btrfs prerequisites (fail fast)
+        run: |
+          set -euo pipefail
+          btrfs --version
+          mkfs.btrfs -V
+          sudo modprobe btrfs
+          test -e /dev/loop-control
+          loop=$(sudo losetup -f)
+          test -b "$loop"
+          echo "Free loop device available: $loop"
+
+      - name: Run unprivileged test suite
+        run: cargo test --locked
+
+      - name: Locate btrfs_image test binary (built unprivileged)
+        run: |
+          set -euo pipefail
+          cargo test --locked --test btrfs_image --no-run --message-format=json \
+            | jq -r 'select(.executable != null and .target.name == "btrfs_image") | .executable' \
+            > /tmp/btrfs_image_bin
+          test -s /tmp/btrfs_image_bin
+          echo "BTRFS_IMAGE_BIN=$(cat /tmp/btrfs_image_bin)" >> "$GITHUB_ENV"
+
+      - name: Run privileged btrfs image tests
+        run: sudo env PATH="$PATH" "$BTRFS_IMAGE_BIN" --ignored
