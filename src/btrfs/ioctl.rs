@@ -313,8 +313,9 @@ struct BtrfsIoctlFsInfoArgs {
 
 /// Get filesystem info including csum type and size.
 ///
+/// Returns (csum_type, csum_size, sectorsize, nodesize).
 /// Requires BTRFS_FS_INFO_FLAG_CSUM_INFO (btrfs.h:267).
-pub fn fs_info(fd: RawFd) -> Result<(u16, u16, u32)> {
+pub fn fs_info(fd: RawFd) -> Result<(u16, u16, u32, u32)> {
     let mut args: BtrfsIoctlFsInfoArgs = unsafe { std::mem::zeroed() };
     args.flags = 1; // BTRFS_FS_INFO_FLAG_CSUM_INFO
 
@@ -327,7 +328,12 @@ pub fn fs_info(fd: RawFd) -> Result<(u16, u16, u32)> {
         bail!("BTRFS_IOC_FS_INFO ioctl failed: {}", err);
     }
 
-    Ok((args.csum_type, args.csum_size, args.sectorsize))
+    Ok((
+        args.csum_type,
+        args.csum_size,
+        args.sectorsize,
+        args.nodesize,
+    ))
 }
 
 // ── INO_LOOKUP (get subvol ID) ──────────────────────────────────────────────
