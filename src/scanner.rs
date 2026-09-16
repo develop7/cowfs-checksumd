@@ -64,15 +64,16 @@ impl ScanResult {
 pub struct ScannerConfig {
     pub block_size: usize,
     pub sectorsize: u32,
+    pub nodesize: u32,
     pub csum_type: u16,
     pub csum_size: u16,
 }
-
 impl Default for ScannerConfig {
     fn default() -> Self {
         Self {
             block_size: DEFAULT_BLOCK_SIZE,
             sectorsize: 4096,
+            nodesize: 16384,
             csum_type: 0, // CRC32
             csum_size: 4,
         }
@@ -88,14 +89,17 @@ impl ScannerConfig {
             ..Default::default()
         };
         if let Ok(f) = File::open(root) {
-            if let Ok((csum_type, csum_size, sectorsize)) = ioctl::fs_info(f.as_raw_fd()) {
+            if let Ok((csum_type, csum_size, sectorsize, nodesize)) = ioctl::fs_info(f.as_raw_fd())
+            {
                 config.csum_type = csum_type;
                 config.csum_size = csum_size;
                 config.sectorsize = sectorsize;
+                config.nodesize = nodesize;
                 tracing::info!(
-                    "btrfs detected: csum={}, sectorsize={}",
+                    "btrfs detected: csum={}, sectorsize={}, nodesize={}",
                     crate::btrfs::csum_type_name(csum_type),
-                    sectorsize
+                    sectorsize,
+                    nodesize
                 );
             }
         }
@@ -237,6 +241,7 @@ fn scan_csum_tree(
             ext.disk_num_bytes,
             config.sectorsize,
             config.csum_size,
+            config.nodesize,
         )?;
 
         for (i, chunk) in csums.chunks(sectors_per_block).enumerate() {

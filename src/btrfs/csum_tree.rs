@@ -38,11 +38,20 @@ pub fn read_csums_for_extent(
     num_bytes: u64,
     sectorsize: u32,
     csum_size: u16,
+    nodesize: u32,
 ) -> Result<Vec<CsumEntry>> {
     let num_sectors = (num_bytes / sectorsize as u64) as usize;
     let mut result = Vec::with_capacity(num_sectors);
     let mut current_bytenr = disk_bytenr;
     let mut remaining = num_sectors;
+
+    // btrfs merges checksum items across adjacent data extents, so the
+    // item covering our position can start earlier — up to one leaf's
+    // worth of checksums back. TREE_SEARCH_V2 only searches forward, so
+    // widen min_offset by that window and pick the covering item. This
+    // mirrors the kernel's btrfs_lookup_csums step-back.
+    let csums_per_leaf = (nodesize as u64 / csum_size as u64).max(1);
+    let window = csums_per_leaf * sectorsize as u64;
 
     while remaining > 0 {
         let mut key = BtrfsIoctlSearchKey {
@@ -51,7 +60,7 @@ pub fn read_csums_for_extent(
             max_objectid: constants::BTRFS_EXTENT_CSUM_OBJECTID,
             min_type: constants::BTRFS_EXTENT_CSUM_KEY,
             max_type: constants::BTRFS_EXTENT_CSUM_KEY,
-            min_offset: current_bytenr,
+            min_offset: current_bytenr.saturating_sub(window),
             max_offset: u64::MAX,
             min_transid: 0,
             max_transid: u64::MAX,
@@ -65,23 +74,30 @@ pub fn read_csums_for_extent(
             break;
         }
 
+        // Sectors consumed this pass; a pass that consumes nothing means
+        // no item covers current_bytenr — stop instead of looping.
+        let mut consumed = 0usize;
+
         for (header, payload) in &items {
             if header.ty != constants::BTRFS_EXTENT_CSUM_KEY {
                 continue;
             }
 
+            // Items are returned in key order; once past our position no
+            // later item can cover it.
+            let item_start = header.offset;
+            if item_start > current_bytenr {
+                break;
+            }
+
             // The item starts at header.offset (logical bytenr) and contains
             // (payload.len() / csum_size) consecutive sector checksums.
-            let item_start = header.offset;
             let csums_in_item = payload.len() / csum_size as usize;
 
             // How many sectors into this item is our current position?
-            let sector_offset = if current_bytenr >= item_start {
-                ((current_bytenr - item_start) / sectorsize as u64) as usize
-            } else {
-                0
-            };
+            let sector_offset = ((current_bytenr - item_start) / sectorsize as u64) as usize;
 
+            // An earlier item whose csums don't reach current_bytenr.
             if sector_offset >= csums_in_item {
                 continue;
             }
@@ -97,12 +113,11 @@ pub fn read_csums_for_extent(
             }
 
             remaining -= to_read;
-            let sectors_read = to_read as u64;
-            current_bytenr += sectors_read * sectorsize as u64;
+            consumed += to_read;
+            current_bytenr += to_read as u64 * sectorsize as u64;
         }
 
-        // If we got fewer items than requested, we've exhausted the tree
-        if items.len() < key.nr_items as usize {
+        if consumed == 0 {
             break;
         }
     }
