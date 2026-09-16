@@ -7,10 +7,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1 # 3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: dtolnay/rust-toolchain@v1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
           toolchain: stable
 
@@ -33,14 +34,19 @@ jobs:
       - name: Run unprivileged test suite
         run: cargo test --locked
 
+      # Canonical recipe for locating the test binary; README.md's Tests
+      # section references this step instead of duplicating the pipeline.
       - name: Locate btrfs_image test binary (built unprivileged)
         run: |
           set -euo pipefail
           cargo test --locked --test btrfs_image --no-run --message-format=json \
-            | jq -r 'select(.executable != null and .target.name == "btrfs_image") | .executable' \
+            | jq -r 'select(.executable != null and .target.name == "btrfs_image" and (.target.kind | index("test"))) | .executable' \
             > /tmp/btrfs_image_bin
           test -s /tmp/btrfs_image_bin
+          # Exactly one executable — a second match means a target-name
+          # collision and would silently corrupt the path.
+          test "$(wc -l < /tmp/btrfs_image_bin)" -eq 1
           echo "BTRFS_IMAGE_BIN=$(cat /tmp/btrfs_image_bin)" >> "$GITHUB_ENV"
 
       - name: Run privileged btrfs image tests
-        run: sudo env PATH="$PATH" "$BTRFS_IMAGE_BIN" --ignored
+        run: sudo env PATH="$PATH" "$BTRFS_IMAGE_BIN" --ignored --nocapture

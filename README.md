@@ -98,24 +98,26 @@ src/
 Run the ordinary test suite with `cargo test --locked`.
 
 The `btrfs_image` integration test creates a fresh 256 MiB sparse image,
-formats and loop-mounts it, writes two duplicate files and a same-size unique
-file, then runs the real `scan` and `list` commands. It checks the database
-digests and listed paths, rejects userspace-fallback-only results, and unmounts
-and removes the fixture. No images are cached or checked in.
+formats and loop-mounts it, writes duplicate, unique, and inline files, then
+runs the real `scan` and `list` commands. The same content is also scanned
+from a tmpfs directory (which takes the userspace fallback path): the two
+file digests must differ, guarding against the CSUM-tree path silently
+degrading to fallback. No images are cached or checked in.
 
 This test is ignored by default: it needs Linux, `btrfs-progs`, loop devices,
 and mount/`TREE_SEARCH_V2` privileges. Build unprivileged, then execute only
-the test binary as root (requires `jq`):
+the test binary as root. The canonical recipe lives in the "Locate
+btrfs_image test binary" step of `.github/workflows/tests.yml`; for a local
+run, adapt it without `GITHUB_ENV`:
 
 ```bash
-test_bin=$(cargo test --locked --test btrfs_image --no-run --message-format=json |
-  jq -r 'select(.executable != null and .target.name == "btrfs_image") | .executable')
-sudo "$test_bin" --ignored --nocapture
+sudo "$(cargo test --locked --test btrfs_image --no-run --message-format=json |
+  jq -r 'select(.executable != null and .target.name == "btrfs_image" and (.target.kind | index("test"))) | .executable')" --ignored --nocapture
 ```
-
-CI runs this explicitly; missing prerequisites fail rather than silently skip.
-If unmount fails, the fixture directory is retained and its path reported for
-manual cleanup. Killing the test with SIGKILL also requires manual cleanup.
+CI runs this on every push and pull request; missing prerequisites fail
+rather than silently skip. If unmount fails, the fixture directory is
+retained and its path reported for manual cleanup. Killing the test with
+SIGKILL also requires manual cleanup.
 
 ## References
 
